@@ -36,12 +36,14 @@ import (
 )
 
 var mediaHTTPClient = http.Client{
-	Transport: &http.Transport{
-		DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 10 * time.Second,
-		ForceAttemptHTTP2:     true,
-	},
+	// // NOTE (John): The Jar field is not set anywhere in the code, so we don't need to worry about the proxy cookie field inserted anywhere
+	Transport: &messagix.ProxyCookieRemoveTransport{
+		Transport: &http.Transport{
+			DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+			ForceAttemptHTTP2:     true,
+		}},
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if req.URL.Hostname() == "video.xx.fbcdn.net" {
 			return http.ErrUseLastResponse
@@ -80,10 +82,13 @@ func addDownloadHeaders(hdr http.Header, mime string) {
 func downloadChunkedVideo(ctx context.Context, mime, url string, maxSize int64) ([]byte, error) {
 	log := zerolog.Ctx(ctx)
 	log.Trace().Str("url", url).Msg("Downloading video in chunks")
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare request: %w", err)
 	}
+
+	// TODO: Possibly may use proxy cookies but we are not uploading videos at the moment so should be fine
 	addDownloadHeaders(req.Header, mime)
 	resp, err := mediaHTTPClient.Do(req)
 	if err != nil {

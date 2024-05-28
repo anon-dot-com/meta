@@ -40,6 +40,8 @@ const (
 
 	IGCookieMachineID MetaCookieName = "mid"
 	IGCookieDeviceID  MetaCookieName = "ig_did"
+
+	ProvidedProxyUrl MetaCookieName = "provided_proxy_url"
 )
 
 var FBRequiredCookies = []MetaCookieName{FBCookieXS, FBCookieCUser}
@@ -66,7 +68,9 @@ func (c *Cookies) String() string {
 	defer c.lock.RUnlock()
 	var out []string
 	for k, v := range c.values {
-		out = append(out, fmt.Sprintf("%s=%s", k, v))
+		if k != "provided_proxy_url" {
+			out = append(out, fmt.Sprintf("%s=%s", k, v))
+		}
 	}
 	return strings.Join(out, "; ")
 }
@@ -93,6 +97,13 @@ func (c *Cookies) GetMissingCookieNames() []MetaCookieName {
 	return slices.DeleteFunc(missingCookies, func(name MetaCookieName) bool {
 		return c.values[name] != ""
 	})
+}
+
+func (c *Cookies) GetProvidedProxyURL() string {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+
+	return c.values[ProvidedProxyUrl]
 }
 
 func (c *Cookies) IsLoggedIn() bool {

@@ -496,7 +496,7 @@ func (user *User) Connect() {
 
 func (user *User) unlockedConnect() {
 	user.BridgeState.Send(status.BridgeState{StateEvent: status.StateConnecting})
-	err := user.unlockedConnectWithCookies(user.Cookies)
+	err := user.unlockedConnectWithCookies(user.Cookies, user.Cookies.GetProvidedProxyURL())
 	if err != nil {
 		user.log.Error().Err(err).Msg("Failed to connect")
 		if errors.Is(err, messagix.ErrTokenInvalidated) {
@@ -560,7 +560,9 @@ func (user *User) unlockedConnect() {
 func (user *User) Login(ctx context.Context, cookies *cookies.Cookies) error {
 	user.Lock()
 	defer user.Unlock()
-	err := user.unlockedConnectWithCookies(cookies)
+
+	providedProxyUrl := cookies.GetProvidedProxyURL()
+	err := user.unlockedConnectWithCookies(cookies, providedProxyUrl)
 	if err != nil {
 		return err
 	}
@@ -577,11 +579,20 @@ type respGetProxy struct {
 	ProxyURL string `json:"proxy_url"`
 }
 
-func (user *User) getProxy(reason string) (string, error) {
-	if user.bridge.Config.Meta.GetProxyFrom == "" {
+func (user *User) getProxy(reason string, providedProxyUrl string) (string, error) {
+	if user.bridge.Config.Meta.GetProxyFrom == "" && providedProxyUrl == "" {
 		return user.bridge.Config.Meta.Proxy, nil
 	}
-	parsed, err := url.Parse(user.bridge.Config.Meta.GetProxyFrom)
+
+	var rawProxyURL string
+	if providedProxyUrl != "" {
+		rawProxyURL = providedProxyUrl
+	} else {
+		rawProxyURL = user.bridge.Config.Meta.GetProxyFrom
+	}
+
+	parsed, err := url.Parse(rawProxyURL)
+
 	if err != nil {
 		return "", fmt.Errorf("failed to parse address: %w", err)
 	}
@@ -607,17 +618,41 @@ func (user *User) getProxy(reason string) (string, error) {
 	return respData.ProxyURL, nil
 }
 
-func (user *User) unlockedConnectWithCookies(cookies *cookies.Cookies) error {
+func (user *User) unlockedConnectWithCookies(cookies *cookies.Cookies, providedProxyUrl string) error {
 	if cookies == nil {
 		return fmt.Errorf("no cookies provided")
 	}
 
 	log := user.log.With().Str("component", "messagix").Logger()
-	user.log.Debug().Msg("Connecting to Meta")
+	user.log.Debug().Msg("Connecting to Meta with a Proxy URL")
 	// TODO set proxy for media client?
 	cli := messagix.NewClient(cookies, log)
-	if user.bridge.Config.Meta.GetProxyFrom != "" || user.bridge.Config.Meta.Proxy != "" {
-		cli.GetNewProxy = user.getProxy
+
+	if providedProxyUrl != "" {
+		cli.GetNewProxy = func(reason string) (string, error) {
+			derivedUrl, err := user.getProxy(reason, providedProxyUrl)
+			user.log.Info().Msg("Made a provided proxy request")
+			if err != nil {
+				user.log.Err(err).Msg("Failed to get provided proxy")
+			} else {
+				user.log.Info().Msg("Making a proxy request with custom proxy URL")
+			}
+
+			return derivedUrl, err
+		}
+	} else if user.bridge.Config.Meta.GetProxyFrom != "" || user.bridge.Config.Meta.Proxy != "" {
+		user.log.Info().Msg("Making a proxy request with the proxy from the config")
+		cli.GetNewProxy = func(reason string) (string, error) {
+			derivedUrl, err := user.getProxy(reason, "")
+			user.log.Info().Msg("Made a config proxy request")
+			if err != nil {
+				user.log.Err(err).Msg("Failed to get the config proxy URL")
+			} else {
+				user.log.Info().Msg("Making a proxy request with the config proxy URL")
+			}
+			return derivedUrl, err
+		}
+
 		if !cli.UpdateProxy("connect") {
 			return fmt.Errorf("failed to update proxy")
 		}

@@ -83,12 +83,14 @@ func NewClient(cookies *cookies.Cookies, logger zerolog.Logger) *Client {
 	}
 	cli := &Client{
 		http: &http.Client{
-			Transport: &http.Transport{
-				DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ResponseHeaderTimeout: 40 * time.Second,
-				ForceAttemptHTTP2:     true,
-			},
+			// NOTE (John): The Jar field is not set anywhere in the code, so we don't need to worry about the proxy cookie field inserted anywhere
+			Transport: &ProxyCookieRemoveTransport{
+				Transport: &http.Transport{
+					DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+					TLSHandshakeTimeout:   10 * time.Second,
+					ResponseHeaderTimeout: 40 * time.Second,
+					ForceAttemptHTTP2:     true,
+				}},
 			Timeout: 60 * time.Second,
 		},
 		cookies:          cookies,
@@ -167,13 +169,18 @@ func (c *Client) configurePlatformClient() {
 }
 
 func (c *Client) SetProxy(proxyAddr string) error {
+	c.Logger.Debug().Msg("Setting a proxy address")
+
 	proxyParsed, err := url.Parse(proxyAddr)
 	if err != nil {
 		return err
 	}
 
 	if proxyParsed.Scheme == "http" || proxyParsed.Scheme == "https" {
-		c.httpProxy = http.ProxyURL(proxyParsed)
+		c.httpProxy = func(request *http.Request) (*url.URL, error) {
+			c.Logger.Debug().Msg("Making a request with proxy.")
+			return http.ProxyURL(proxyParsed)(request)
+		}
 		c.http.Transport.(*http.Transport).Proxy = c.httpProxy
 	} else if proxyParsed.Scheme == "socks5" {
 		c.socksProxy, err = proxy.FromURL(proxyParsed, &net.Dialer{Timeout: 20 * time.Second})
@@ -200,6 +207,7 @@ func (c *Client) SetEventHandler(handler EventHandler) {
 
 func (c *Client) UpdateProxy(reason string) bool {
 	if c.GetNewProxy == nil {
+		c.Logger.Debug().Str("reason", reason).Msg("Did not update proxy since GetNewProxy is nil")
 		return true
 	}
 	if proxyAddr, err := c.GetNewProxy(reason); err != nil {
@@ -208,7 +216,10 @@ func (c *Client) UpdateProxy(reason string) bool {
 	} else if err = c.SetProxy(proxyAddr); err != nil {
 		c.Logger.Err(err).Str("reason", reason).Msg("Failed to set new proxy")
 		return false
+	} else {
+		c.Logger.Debug().Str("reason", reason).Msg("Successfully updated proxy")
 	}
+
 	return true
 }
 
@@ -285,6 +296,7 @@ func (c *Client) IsConnected() bool {
 	return c.socket.conn != nil
 }
 
+// TODO: REMOVE COOKIE
 func (c *Client) sendCookieConsent(jsDatr string) error {
 
 	var payloadQuery interface{}
