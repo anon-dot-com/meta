@@ -2,11 +2,8 @@ package debug
 
 import (
 	"encoding/hex"
-	"fmt"
 	"strings"
-	"time"
 
-	"github.com/mattn/go-colorable"
 	zerolog "github.com/rs/zerolog"
 )
 
@@ -19,30 +16,8 @@ var colors = map[string]string{
 	"fatal": "\x1b[38;5;52mFATAL\x1b[0m",
 }
 
-var output = zerolog.ConsoleWriter{
-	Out:        colorable.NewColorableStdout(),
-	TimeFormat: time.ANSIC,
-	FormatLevel: func(i interface{}) string {
-		name := fmt.Sprintf("%s", i)
-		coloredName := colors[name]
-		return coloredName
-	},
-	FormatMessage: func(i interface{}) string {
-		coloredMsg := fmt.Sprintf(colors["text"], i)
-		return coloredMsg
-	},
-	FormatFieldName: func(i interface{}) string {
-		name := fmt.Sprintf("%s", i)
-		return fmt.Sprintf(colors["gray"], name+"=")
-	},
-	FormatFieldValue: func(i interface{}) string {
-		return fmt.Sprintf("%s", i)
-	},
-	NoColor: false,
-}
-
 func NewLogger() zerolog.Logger {
-	return zerolog.New(output).With().Timestamp().Logger()
+	return zerolog.DefaultContextLogger.With().Logger()
 }
 
 func BeautifyHex(data []byte) string {

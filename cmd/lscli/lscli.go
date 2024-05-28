@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
 
 	"github.com/rs/zerolog"
 	badGlobalLog "github.com/rs/zerolog/log"
@@ -30,10 +29,12 @@ func init() {
 }
 
 func main() {
-	badGlobalLog.Logger = zerolog.New(zerolog.NewConsoleWriter(func(w *zerolog.ConsoleWriter) {
-		w.Out = os.Stderr
-		w.TimeFormat = time.RFC3339
-	})).With().Timestamp().Logger()
+	// badGlobalLog.Logger = zerolog.New(zerolog.NewConsoleWriter(func(w *zerolog.ConsoleWriter) {
+	// 	w.Out = os.Stderr
+	// 	w.TimeFormat = time.RFC3339
+	// })).With().Timestamp().Logger()
+
+	badGlobalLog.Logger = zerolog.DefaultContextLogger.With().Logger()
 
 	var data []byte
 	if exerrors.Must(os.Stdin.Stat()).Mode()&os.ModeNamedPipe != 0 {
